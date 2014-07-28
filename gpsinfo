@@ -1,0 +1,42 @@
+#!/usr/bin/env ruby
+require 'date'
+require 'YAML'
+
+file = ARGV[0]
+
+if file.nil?
+  puts "File is missing!!!"
+  exit 1
+end
+
+unless File.exists?(file)
+  puts "File doesn't exists!!!"
+  exit 1
+end
+
+skipFrame = `AtomicParsley "#{file}" -T | grep skip`
+data = skipFrame.match(/Atom skip @ (\d+) of size: (\d+), ends @ (\d+)/)
+start = data[1].to_i
+count = data[2].to_i
+data = IO.binread(file, count, start).split("\x00").select { |i| i.match(/^\d{4}\/\d{2}\/\d{2}/) }.map(&:chomp).map { |item|
+  item.split(' ').select { |i| i.length > 0 }
+}
+ct = `exiftool "#{file}" | grep "Track Create Date"`.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/)
+createTime = DateTime.parse("#{ct[1]}/#{ct[2]}/#{ct[3]} #{ct[4]}:#{ct[5]}:#{ct[6]}").to_time
+# ["2014/07/19", "07:47:11", "N:52.478058", "E:13.443543", "0.00Km/h", "x:+0.094", "y:+0.000", "z:+0.969"]
+data = data.map do |i|
+  t = DateTime.parse(i[0] + " " + i[1]).to_time
+  total_seconds = (t-createTime).to_i
+  seconds = total_seconds % 60
+  minutes = (total_seconds / 60) % 60
+  hours = total_seconds / (60 * 60)
+  {
+    time: t,
+    offset: total_seconds,
+    offsetFormatted: format("%02d:%02d:%02d", hours, minutes, seconds),
+    lat: i[2][2..-1],
+    lon: i[3][2..-1]
+  }
+end
+
+puts YAML.dump data
